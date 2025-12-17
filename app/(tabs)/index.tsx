@@ -5,21 +5,33 @@ import EmojiPicker from "@/components/EmojiPicker";
 import EmojiSticker from "@/components/EmojiSticker";
 import IconButton from "@/components/IconButton";
 import ImageViewer from "@/components/ImageViewer";
+
 import * as ImagePicker from "expo-image-picker";
-import { useState } from "react";
-import { ImageSourcePropType, StyleSheet, Text, View } from "react-native";
+import * as MediaLibrary from "expo-media-library";
+
+import { useRef, useState } from "react";
+import { Alert, ImageSourcePropType, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { captureRef } from "react-native-view-shot";
+
 const bgImage = require("@/assets/images/background-image.png");
 
 export default function Index() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [showAppOptions, setShowAppOptions] = useState<boolean>(false);
-  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
+  const [showAppOptions, setShowAppOptions] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedEmoji, setSelectedEmoji] =
     useState<ImageSourcePropType | null>(null);
 
+  const imageRef = useRef<View>(null);
+
+  // ✅ Explicit permission request (Android 15 safe)
+  const requestMediaPermission = async () => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    return status === "granted";
+  };
+
   const handleLoadFromGallery = async () => {
-    console.log("Load from gallery");
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsEditing: true,
@@ -27,27 +39,44 @@ export default function Index() {
     });
 
     if (!result.canceled) {
-      console.log(result.assets);
       setSelectedImage(result.assets[0].uri);
-    } else {
-      console.log("User cancelled image picker");
+      setShowAppOptions(true);
     }
   };
 
   const onReset = () => {
+    setSelectedImage(null);
+    setSelectedEmoji(null);
     setShowAppOptions(false);
   };
 
   const onAddSticker = () => {
-    // we will implement this later
-  };
-
-  const onSaveImageAsync = async () => {
-    // we will implement this later
+    setIsModalVisible(true);
   };
 
   const onModalClose = () => {
     setIsModalVisible(false);
+  };
+
+  const onSaveImageAsync = async () => {
+    const hasPermission = await requestMediaPermission();
+
+    if (!hasPermission) {
+      Alert.alert("Permission required", "Storage permission is needed to save the image.");
+      return;
+    }
+
+    try {
+      const localUri = await captureRef(imageRef, {
+        height: 440,
+        quality: 1,
+      });
+
+      await MediaLibrary.saveToLibraryAsync(localUri);
+      Alert.alert("Success", "Image saved to gallery!");
+    } catch (e) {
+      console.log(e);
+    }
   };
 
   return (
@@ -55,21 +84,20 @@ export default function Index() {
       <Text style={styles.text}>Home screen</Text>
 
       <View style={styles.imageContainer}>
-        <ImageViewer img={bgImage} selectedImage={selectedImage} />
-        {selectedEmoji && (
-          <EmojiSticker imageSize={40} stickerSource={selectedEmoji} />
-        )}
+        <View ref={imageRef} collapsable={false}>
+          <ImageViewer img={bgImage} selectedImage={selectedImage} />
+          {selectedEmoji && (
+            <EmojiSticker imageSize={40} stickerSource={selectedEmoji} />
+          )}
+        </View>
       </View>
+
       {showAppOptions ? (
         <View style={styles.optionsContainer}>
           <View style={styles.optionsRow}>
             <IconButton icon="refresh" label="Reset" onPress={onReset} />
             <CircleButton onPress={onAddSticker} />
-            <IconButton
-              icon="save-alt"
-              label="Save"
-              onPress={onSaveImageAsync}
-            />
+            <IconButton icon="save-alt" label="Save" onPress={onSaveImageAsync} />
           </View>
         </View>
       ) : (
@@ -81,10 +109,11 @@ export default function Index() {
           />
           <CustomButtom
             btnText="Use this photo"
-            onPress={() => setIsModalVisible(true)}
+            onPress={() => setShowAppOptions(true)}
           />
         </View>
       )}
+
       <EmojiPicker isVisible={isModalVisible} onClose={onModalClose}>
         <EmojiList onSelect={setSelectedEmoji} onCloseModal={onModalClose} />
       </EmojiPicker>
@@ -100,11 +129,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   text: {
-    color: "#fff",
-  },
-  link: {
-    fontSize: 20,
-    textDecorationLine: "underline",
     color: "#fff",
   },
   imageContainer: {
